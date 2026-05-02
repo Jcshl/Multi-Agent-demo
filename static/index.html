@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>原神深渊与养成助手</title>
+  <title>多 Agent 协同 · 原神助手</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -115,7 +115,7 @@
 </head>
 <body>
   <header>
-    <h1>原神深渊与养成助手</h1>
+    <h1>多 Agent 协同 · 原神助手</h1>
     <div class="actions">
       <button type="button" id="btnNew">新对话</button>
     </div>
@@ -152,12 +152,16 @@
       localStorage.removeItem(STORAGE_KEY);
     }
 
-    function appendBubble(role, text) {
+    function appendBubble(role, text, intent) {
       const div = document.createElement("div");
       div.className = "bubble " + (role === "user" ? "user" : "assistant");
       const r = document.createElement("div");
       r.className = "role";
-      r.textContent = role === "user" ? "你" : "助手";
+      if (role === "user") {
+        r.textContent = "你";
+      } else {
+        r.textContent = intent ? ("助手 · " + intent) : "助手";
+      }
       div.appendChild(r);
       const t = document.createElement("div");
       t.textContent = text;
@@ -186,7 +190,7 @@
           return;
         }
         if (data.session_id) setSessionId(data.session_id);
-        appendBubble("assistant", data.reply || "");
+        appendBubble("assistant", data.reply || "", data.intent || "");
       } catch (e) {
         appendBubble("assistant", "网络错误：" + (e && e.message ? e.message : String(e)));
       } finally {

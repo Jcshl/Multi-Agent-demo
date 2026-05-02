@@ -1,23 +1,21 @@
 # main.py
 
 """
-程序入口：运行对话系统
+程序入口：多 Agent 协同对话（自动路由至攻略 / 账号库 / 闲聊）。
 """
 
 import os
 from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
-from chatbot import ChatBot
+from orchestrator import MultiAgentOrchestrator
 
 
 # 加载环境变量
 load_dotenv()
 
-# 创建 ChatBot 实例
-bot = ChatBot(
-    # 大模型名称（例如 deepseek-chat），来自 .env。
+# 多 Agent 编排（内含原 ChatBot 攻略能力）
+bot = MultiAgentOrchestrator(
     model_name=os.getenv("MODEL_NAME"),
-    # API Key，来自 .env。
-    api_key=os.getenv("SILICONFLOW_API_KEY")
+    api_key=os.getenv("SILICONFLOW_API_KEY"),
 )
 
 
@@ -29,6 +27,6 @@ while True:
     if user_input.lower() in ["exit", "quit"]:
         break
 
-    # reply：模型本轮最终回复文本。
-    reply = bot.chat(user_input)
-    print("AI：", reply)
+    # reply：模型本轮最终回复文本；intent：路由到的 specialist。
+    reply, intent = bot.chat(user_input)
+    print(f"AI（{intent}）：", reply)

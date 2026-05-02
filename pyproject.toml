@@ -16,6 +16,7 @@ dependencies = [
     "langchain-text-splitters>=1.1.2",
     "markdown>=3.5",
     "openai>=2.32.0",
+    "pymysql>=1.1.0",
     "pypdf>=6.0.0",
     "python-dotenv>=1.2.2",
     "sentence-transformers>=5.4.1",

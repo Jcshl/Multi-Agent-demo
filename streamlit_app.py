@@ -7,13 +7,13 @@ import os
 import streamlit as st
 from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
 
-from chatbot import ChatBot
+from orchestrator import MultiAgentOrchestrator
 
 load_dotenv()
 
 
-def _ensure_bot() -> ChatBot:
-    """确保当前会话有可用 ChatBot；首次访问时按 .env 创建实例。"""
+def _ensure_bot() -> MultiAgentOrchestrator:
+    """确保当前会话有多 Agent 编排器；首次访问时按 .env 创建实例。"""
     if st.session_state.get("bot") is None:
         # model/key：模型配置与鉴权信息，来自环境变量。
         model = (os.getenv("MODEL_NAME") or "").strip()
@@ -21,19 +21,19 @@ def _ensure_bot() -> ChatBot:
         if not model or not key:
             st.error("请在项目根目录 `.env` 中配置 `MODEL_NAME` 与 `SILICONFLOW_API_KEY`。")
             st.stop()
-        st.session_state.bot = ChatBot(model_name=model, api_key=key)
+        st.session_state.bot = MultiAgentOrchestrator(model_name=model, api_key=key)
     return st.session_state.bot
 
 
 st.set_page_config(page_title="对话", layout="centered")
-st.title("原神深渊与养成助手")
+st.title("多 Agent 协同 · 原神助手")
 
 with st.sidebar:
-    st.caption("与 `main.py` 共用同一套 ChatBot（工具 + RAG）。")
+    st.caption("攻略（原 ChatBot）· 账号 MySQL · 闲聊；自动路由。")
     if st.button("新对话"):
         # 页面展示层的聊天记录（仅用于 UI 回显）。
         st.session_state.messages = []
-        # 业务层 ChatBot（保存真实多轮上下文）。
+        # 业务层编排器（各 Agent 独立多轮上下文）。
         bot = st.session_state.get("bot")
         if bot is not None:
             bot.clear_history()
@@ -43,7 +43,7 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 当前页面会话对应的 ChatBot 实例。
+# 当前页面会话对应的编排器实例。
 bot = _ensure_bot()
 
 for message in st.session_state.messages:
@@ -58,11 +58,14 @@ if prompt := st.chat_input("输入你的问题…"):
 
     with st.chat_message("assistant"):
         with st.spinner("思考中…"):
+            intent = None
             try:
-                # reply：调用 ChatBot 得到的最终回答。
-                reply = bot.chat(prompt)
+                # reply：最终回答；intent：路由 specialist。
+                reply, intent = bot.chat(prompt)
             except Exception as e:
                 reply = f"请求出错：{e}"
         st.markdown(reply)
+        if intent is not None:
+            st.caption(f"路由：{intent}")
 
     st.session_state.messages.append({"role": "assistant", "content": reply})

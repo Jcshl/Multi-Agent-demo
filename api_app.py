@@ -15,9 +15,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles  # pyright: ignore[reportMissingImports]
 from pydantic import BaseModel, Field  # pyright: ignore[reportMissingImports]
 
-from chatbot import ChatBot
+from orchestrator import MultiAgentOrchestrator
 
-# 加载 .env 到进程环境变量，供 API 初始化 ChatBot 使用。
+# 加载 .env 到进程环境变量，供 API 初始化编排器使用。
 load_dotenv()
 
 # 当前文件所在目录（项目根目录）。
@@ -25,8 +25,8 @@ _ROOT = Path(__file__).resolve().parent
 # 静态资源目录，包含 index.html。
 _STATIC = _ROOT / "static"
 
-# 会话存储：session_id -> ChatBot 实例。
-_sessions: dict[str, ChatBot] = {}
+# 会话存储：session_id -> MultiAgentOrchestrator 实例。
+_sessions: dict[str, MultiAgentOrchestrator] = {}
 # 保护 _sessions 的线程锁，避免并发写入竞态。
 _sessions_lock = threading.Lock()
 
@@ -40,9 +40,9 @@ def _env_credentials() -> tuple[str, str] | None:
     return model, key
 
 
-def _get_or_create_bot(session_id: str | None) -> tuple[str, ChatBot]:
+def _get_or_create_bot(session_id: str | None) -> tuple[str, MultiAgentOrchestrator]:
     """
-    按 session_id 获取（或创建）一个 ChatBot 实例。
+    按 session_id 获取（或创建）一个 MultiAgentOrchestrator 实例。
 
     - 未传 session_id 时自动生成 UUID；
     - 使用进程内字典保存会话，配合锁保证并发安全；
@@ -58,7 +58,7 @@ def _get_or_create_bot(session_id: str | None) -> tuple[str, ChatBot]:
     sid = (session_id or "").strip() or str(uuid.uuid4())
     with _sessions_lock:
         if sid not in _sessions:
-            _sessions[sid] = ChatBot(model_name=model, api_key=api_key)
+            _sessions[sid] = MultiAgentOrchestrator(model_name=model, api_key=api_key)
         return sid, _sessions[sid]
 
 
@@ -78,6 +78,8 @@ class ChatResponse(BaseModel):
     reply: str
     # 实际使用的会话 ID（前端需持久化并复用）。
     session_id: str
+    # 路由到的 specialist：game / account / casual。
+    intent: str | None = None
 
 
 class ResetRequest(BaseModel):
@@ -111,20 +113,20 @@ def api_chat(body: ChatRequest):
     if not msg:
         raise HTTPException(status_code=400, detail="message 不能为空")
     sid, bot = _get_or_create_bot(body.session_id)
-    reply = bot.chat(msg)
-    return ChatResponse(reply=reply, session_id=sid)
+    reply, intent = bot.chat(msg)
+    return ChatResponse(reply=reply, session_id=sid, intent=intent)
 
 
 @app.post("/api/chat/reset")
 def api_reset(body: ResetRequest):
     """
-    重置会话接口：移除对应 session 的 ChatBot。
+    重置会话接口：移除对应 session 的编排器实例。
 
     删除后该会话历史不再保留；前端下次聊天会创建新会话实例。
     """
     sid = body.session_id.strip()
     with _sessions_lock:
-        # 删除会话对应的 ChatBot，让下次请求重新创建实例。
+        # 删除会话对应的编排器，让下次请求重新创建实例。
         _sessions.pop(sid, None)
     return {"ok": True}
 
