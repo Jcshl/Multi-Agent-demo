@@ -46,6 +46,14 @@
     }
     h1 { font-size: 1.125rem; margin: 0; font-weight: 600; }
     .actions { display: flex; gap: 0.5rem; align-items: center; }
+    .actions a.link {
+      font-size: 0.875rem;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+    }
+    .actions a.link:hover { text-decoration: underline; }
     button {
       font: inherit;
       cursor: pointer;
@@ -117,6 +125,7 @@
   <header>
     <h1>多 Agent 协同 · 原神助手</h1>
     <div class="actions">
+      <a class="link" href="/presentation">项目展示</a>
       <button type="button" id="btnNew">新对话</button>
     </div>
   </header>

@@ -4,15 +4,21 @@
 from __future__ import annotations
 
 import os
+import sys
 from contextlib import contextmanager
 from typing import Any, Iterator
 
 try:
     import pymysql  # pyright: ignore[reportMissingImports]
     from pymysql.cursors import DictCursor as _DictCursor  # pyright: ignore[reportMissingImports]
-except ImportError:  # pragma: no cover
+except ImportError as _e:  # pragma: no cover
     pymysql = None  # type: ignore[assignment]
     _DictCursor = None  # type: ignore[assignment]
+    print(
+        f"[database] pymysql 导入失败，MySQL 工具不可用。解释器: {sys.executable}\n"
+        f"[database] 原因: {_e}",
+        file=sys.stderr,
+    )
 
 
 def mysql_configured() -> bool:
@@ -46,7 +52,10 @@ def _connect_kwargs() -> dict[str, Any]:
 def mysql_connection() -> Iterator[Any]:
     """上下文管理器：获取一条 DictCursor 连接，用完关闭。"""
     if pymysql is None:
-        raise RuntimeError("未安装 pymysql，请在 pyproject 依赖中安装后重试。")
+        raise RuntimeError(
+            "未安装 pymysql 或导入失败。请在**当前运行服务的同一 Python** 中安装：pip install pymysql。"
+            f" 当前解释器: {sys.executable}"
+        )
     if not mysql_configured():
         raise RuntimeError("MySQL 未配置：请设置 MYSQL_HOST、MYSQL_USER、MYSQL_PASSWORD、MYSQL_DATABASE。")
     conn = pymysql.connect(**_connect_kwargs())

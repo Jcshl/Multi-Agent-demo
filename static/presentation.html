@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>项目展示 · 多 Agent 协同助手</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <style>
+    :root {
+      --bg-deep: #0c0e14;
+      --bg-slide: #12151f;
+      --text: #e8eaf0;
+      --muted: #8b95a8;
+      --accent: #38bdf8;
+      --accent-dim: rgba(56, 189, 248, 0.15);
+      --border: rgba(255, 255, 255, 0.08);
+      --font: "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg-deep);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 1.25rem;
+      background: linear-gradient(to bottom, rgba(12, 14, 20, 0.92), transparent);
+      pointer-events: none;
+    }
+    .topbar a, .topbar span {
+      pointer-events: auto;
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .topbar a:hover { text-decoration: underline; }
+    .topbar span {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .deck {
+      position: relative;
+      height: 100vh;
+      overflow-y: auto;
+      scroll-snap-type: y mandatory;
+      scroll-padding-top: 0;
+    }
+
+    .slide {
+      min-height: 100vh;
+      scroll-snap-align: start;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 4.5rem 1.5rem 3rem;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .slide-inner {
+      width: 100%;
+    }
+
+    .slide--hero {
+      text-align: center;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(56, 189, 248, 0.22), transparent),
+        var(--bg-slide);
+    }
+    .slide--hero h1 {
+      font-size: clamp(1.75rem, 5vw, 2.75rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.75rem;
+      line-height: 1.2;
+    }
+    .slide--hero .lead {
+      font-size: 1.1rem;
+      color: var(--muted);
+      max-width: 36rem;
+      margin: 0 auto 2rem;
+      line-height: 1.6;
+    }
+    .slide--hero .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.6rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn--primary {
+      background: var(--accent);
+      color: #041018;
+      border-color: var(--accent);
+    }
+    .btn--primary:hover { filter: brightness(1.05); }
+    .btn--ghost {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+    .btn--ghost:hover { background: rgba(56, 189, 248, 0.25); }
+
+    h2 {
+      font-size: clamp(1.35rem, 3.5vw, 1.85rem);
+      margin: 0 0 1rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    h2 .num {
+      display: inline-block;
+      font-size: 0.65em;
+      color: var(--accent);
+      margin-right: 0.35rem;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    p.line {
+      color: var(--muted);
+      line-height: 1.75;
+      margin: 0 0 1rem;
+      font-size: 0.98rem;
+    }
+    ul.points {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: var(--text);
+      line-height: 1.75;
+      font-size: 0.98rem;
+    }
+    ul.points li { margin-bottom: 0.5rem; }
+
+    .tag-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .tag {
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+
+    .diagram-wrap {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      overflow-x: auto;
+    }
+    .diagram-wrap .mermaid { display: flex; justify-content: center; }
+
+    .mini-flow {
+      display: grid;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    @media (min-width: 640px) {
+      .mini-flow {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    .mini-card {
+      padding: 1rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .mini-card h3 {
+      margin: 0 0 0.5rem;
+      font-size: 0.95rem;
+      color: var(--accent);
+    }
+    .mini-card p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .kbd-hint {
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .kbd-hint kbd {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      font-family: inherit;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .dots {
+      position: fixed;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 99;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .dots button {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      border: none;
+      padding: 0;
+      background: rgba(255, 255, 255, 0.22);
+      cursor: pointer;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .dots button:hover { background: rgba(255, 255, 255, 0.45); }
+    .dots button.active {
+      background: var(--accent);
+      transform: scale(1.25);
+    }
+
+    .footer-slide {
+      text-align: center;
+    }
+    .footer-slide p { color: var(--muted); font-size: 0.95rem; margin: 0 0 1rem; }
+
+    @media (max-width: 520px) {
+      .dots { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="/">← 返回对话 Demo</a>
+    <span>↑↓ 或 PgUp/PgDn 翻页</span>
+  </div>
+
+  <nav class="dots" id="dots" aria-label="幻灯片导航"></nav>
+
+  <main class="deck" id="deck" tabindex="-1">
+    <section class="slide slide--hero" data-title="封面">
+      <div class="slide-inner">
+        <h1>多 Agent 协同助手</h1>
+        <p class="lead">
+          意图路由 · 攻略 RAG · 账号数据查询 · 闲聊分流<br />
+          统一编排层对接 LangChain 与本地向量库 / MySQL
+        </p>
+        <div class="cta-row">
+          <a class="btn btn--primary" href="/">打开在线对话</a>
+          <a class="btn btn--ghost" href="#slide-arch">浏览架构</a>
+        </div>
+        <p class="kbd-hint">使用 <kbd>↓</kbd> <kbd>↑</kbd> 或滚轮逐页浏览</p>
+      </div>
+    </section>
+
+    <section class="slide" data-title="概述">
+      <div class="slide-inner">
+        <h2><span class="num">01</span>项目做什么</h2>
+        <p class="line">
+          用户一句话可能混合「查攻略」「查玩家 UID 数据」或纯闲聊。单一对话机器人容易串意图或编造数据库字段。
+          本项目用<strong style="color: var(--text)">编排器</strong>先判定意图，再交给对应专家 Agent；同一轮里两类需求并存时，走<strong style="color: var(--text)">复合流程</strong>并行处理后合并回答。
+        </p>
+        <ul class="points">
+          <li><strong>攻略专家</strong>：多轮工具循环（RAG 检索、安全计算等），面向游戏机制与养成问答。</li>
+          <li><strong>账号专家</strong>：只读 MySQL 工具链，按 UID / 关键词查库，避免 LLM 凭空生成表格数据。</li>
+          <li><strong>闲聊专家</strong>：无业务工具，承担寒暄与非任务对话。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="slide" id="slide-arch" data-title="架构">
+      <div class="slide-inner">
+        <h2><span class="num">02</span>分层架构</h2>
+        <p class="line">三种入口（CLI / Streamlit / FastAPI）共用同一 <code style="color: var(--accent);">MultiAgentOrchestrator.chat()</code>，底层再接工具与数据。</p>
+        <div class="diagram-wrap">
+          <pre class="mermaid">
+flowchart TB
+  subgraph L1["应用入口"]
+    CLI["main.py CLI"]
+    ST["Streamlit"]
+    API["FastAPI"]
+  end
+  subgraph L2["编排层"]
+    ORCH["MultiAgentOrchestrator"]
+  end
+  subgraph L3["专家 Agent"]
+    G["ChatBot 攻略"]
+    A["AccountAgent"]
+    C["CasualAgent"]
+  end
+  subgraph L4["工具与数据"]
+    RAG["RAG FAISS"]
+    SQL["MySQL 只读"]
+  end
+  L1 --> ORCH
+  ORCH --> G
+  ORCH --> A
+  ORCH --> C
+  G --> RAG
+  A --> SQL
+          </pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="路由">
+      <div class="slide-inner">
+        <h2><span class="num">03</span>意图路由</h2>
+        <p class="line">
+          默认由 LLM 输出结构化意图（<code style="color: var(--accent);">game</code> / <code style="color: var(--accent);">account</code> / <code style="color: var(--accent);">casual</code> / <code style="color: var(--accent);">composite</code>）。
+          辅以关键词与 UID 启发式纠偏；可通过环境变量切换纯启发式或固定单一路由模式，便于调试与对比实验。
+        </p>
+        <div class="mini-flow">
+          <div class="mini-card">
+            <h3>单一意图</h3>
+            <p>命中后直接调用对应专家，保持各 Agent 独立多轮上下文。</p>
+          </div>
+          <div class="mini-card">
+            <h3>composite</h3>
+            <p>拆成攻略子问与账号子问，两路执行后再由编排器合成一段自然语言回复。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="复合流程">
+      <div class="slide-inner">
+        <h2><span class="num">04</span>复合问题（并行 + 合并）</h2>
+        <p class="line">拆分失败时可用正则抽取 UID 等规则回退，避免整条链路失败。</p>
+        <div class="diagram-wrap">
+          <pre class="mermaid">
+sequenceDiagram
+  participant U as 用户
+  participant O as Orchestrator
+  participant G as 攻略 Agent
+  participant A as 账号 Agent
+  U->>O: 一句话含攻略 + UID
+  O->>O: 拆分子问题
+  par 并行
+    O->>G: game_query
+    O->>A: account_query
+  end
+  G-->>O: game_reply
+  A-->>O: account_reply
+  O->>O: LLM 合成
+  O-->>U: 最终回复
+          </pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="技术栈">
+      <div class="slide-inner">
+        <h2><span class="num">05</span>技术栈</h2>
+        <p class="line">模型通过 OpenAI 兼容接口对接（如 SiliconFlow）；向量检索本地落盘，便于离线演示。</p>
+        <div class="tag-grid">
+          <span class="tag">Python 3.13+</span>
+          <span class="tag">LangChain</span>
+          <span class="tag">ChatOpenAI · Tools</span>
+          <span class="tag">FAISS</span>
+          <span class="tag">sentence-transformers</span>
+          <span class="tag">FastAPI</span>
+          <span class="tag">Streamlit</span>
+          <span class="tag">PyMySQL</span>
+          <span class="tag">uvicorn</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="运行">
+      <div class="slide-inner">
+        <h2><span class="num">06</span>如何运行</h2>
+        <ul class="points">
+          <li><strong>CLI</strong>：<code style="color: var(--accent);">python main.py</code></li>
+          <li><strong>网页对话（本页同源）</strong>：<code style="color: var(--accent);">uvicorn api_app:app --host 0.0.0.0 --port 8000</code> 后访问首页或本展示页</li>
+          <li><strong>Streamlit</strong>：<code style="color: var(--accent);">streamlit run streamlit_app.py</code></li>
+        </ul>
+        <p class="line" style="margin-top: 1rem;">
+          环境变量需配置 <code style="color: var(--accent);">MODEL_NAME</code>、<code style="color: var(--accent);">SILICONFLOW_API_KEY</code>；RAG 与 MySQL 详见仓库内 <code style="color: var(--accent);">.env.example</code>。
+        </p>
+      </div>
+    </section>
+
+    <section class="slide slide--hero footer-slide" data-title="结束">
+      <div class="slide-inner">
+        <h2 style="margin-bottom: 0.75rem;">谢谢观看</h2>
+        <p>演示时可与本页对照讲解架构；需要互动体验请打开对话 Demo。</p>
+        <div class="cta-row" style="margin-top: 1.5rem;">
+          <a class="btn btn--primary" href="/">进入对话</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "dark",
+      securityLevel: "loose",
+      flowchart: { curve: "basis", padding: 12 },
+      sequence: { mirrorActors: false },
+    });
+
+    (function () {
+      const deck = document.getElementById("deck");
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const dotsNav = document.getElementById("dots");
+
+      slides.forEach((_, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("aria-label", "第 " + (i + 1) + " 页");
+        b.addEventListener("click", () => {
+          slides[i].scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        dotsNav.appendChild(b);
+      });
+
+      const dotButtons = Array.from(dotsNav.querySelectorAll("button"));
+
+      function setActive(i) {
+        dotButtons.forEach((btn, j) => btn.classList.toggle("active", j === i));
+      }
+
+      function updateActiveFromScroll() {
+        const rect = deck.getBoundingClientRect();
+        const centerY = rect.top + rect.height * 0.38;
+        let best = 0;
+        let bestDist = Infinity;
+        slides.forEach((s, i) => {
+          const r = s.getBoundingClientRect();
+          const mid = (r.top + r.bottom) / 2;
+          const d = Math.abs(mid - centerY);
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        });
+        setActive(best);
+      }
+
+      deck.addEventListener(
+        "scroll",
+        () => {
+          window.requestAnimationFrame(updateActiveFromScroll);
+        },
+        { passive: true }
+      );
+      window.addEventListener("resize", updateActiveFromScroll);
+      updateActiveFromScroll();
+
+      function currentIndex() {
+        const rect = deck.getBoundingClientRect();
+        const centerY = rect.top + rect.height * 0.38;
+        let best = 0;
+        let bestDist = Infinity;
+        slides.forEach((s, i) => {
+          const r = s.getBoundingClientRect();
+          const mid = (r.top + r.bottom) / 2;
+          const d = Math.abs(mid - centerY);
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        });
+        return best;
+      }
+
+      function go(delta) {
+        const i = Math.max(0, Math.min(slides.length - 1, currentIndex() + delta));
+        slides[i].scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+        if (e.key === "ArrowDown" || e.key === "PageDown") {
+          e.preventDefault();
+          go(1);
+        } else if (e.key === "ArrowUp" || e.key === "PageUp") {
+          e.preventDefault();
+          go(-1);
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          slides[0].scrollIntoView({ behavior: "smooth" });
+        } else if (e.key === "End") {
+          e.preventDefault();
+          slides[slides.length - 1].scrollIntoView({ behavior: "smooth" });
+        }
+      });
+
+      window.addEventListener("load", () => {
+        setTimeout(updateActiveFromScroll, 600);
+      });
+    })();
+  </script>
+</body>
+</html>

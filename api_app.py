@@ -1,5 +1,7 @@
 # api_app.py
+# .\.venv\Scripts\Activate.ps1     激活环境
 # 运行：uvicorn api_app:app --host 0.0.0.0 --port 8000
+# uv run uvicorn api_app:app --host 0.0.0.0 --port 8000
 # 浏览器打开 http://127.0.0.1:8000/ （与 streamlit_app 共用 .env）
 
 from __future__ import annotations
@@ -97,6 +99,12 @@ app = FastAPI(title="LangChain Agent Demo", version="0.1.0")
 def index_page():
     """返回聊天页面入口（static/index.html）。"""
     return FileResponse(_STATIC / "index.html")
+
+
+@app.get("/presentation")
+def presentation_page():
+    """全屏滚动式项目展示页（类 PPT，静态 presentation.html）。"""
+    return FileResponse(_STATIC / "presentation.html")
 
 
 @app.post("/api/chat", response_model=ChatResponse)
