@@ -30,6 +30,11 @@ flowchart TB
         RAG["rag.py<br/>FAISS + 本地文档向量库"]
     end
 
+    subgraph MEM["记忆与持久化"]
+        MS["memory_store.py<br/>SQLite 提纲摘要"]
+        WEB["static/index.html<br/>localStorage 聊天记录"]
+    end
+
     CLI --> ORCH
     ST --> ORCH
     API --> ORCH
@@ -39,6 +44,8 @@ flowchart TB
     GAME --> T1
     T1 --> RAG
     ACC --> T2
+    ORCH --> MS
+    API --> WEB
 ```
 
 **职责摘要**
@@ -46,9 +53,10 @@ flowchart TB
 | 层 | 作用 |
 |----|------|
 | 第 1 层 | 三种不同 UI/协议，都调用同一套 `MultiAgentOrchestrator.chat()`。 |
-| 第 2 层 | 意图路由；复合问题拆子问、多路执行、再合并。 |
-| 第 3 层 | 三个「专家」：攻略带工具循环、账号带 MySQL 工具、闲聊无业务工具。 |
+| 第 2 层 | 意图路由；复合问题拆子问、多路执行、再合并；维护 `_stm_chain`、指代消解与会话轮次注入。 |
+| 第 3 层 | 三个「专家」：攻略带工具循环、账号带 MySQL 工具、闲聊无业务工具；均可注入提纲式长期记忆。 |
 | 第 4 层 | 具体能力：向量检索、安全计算、泛化搜索占位、只读 SQL。 |
+| 记忆 | `memory_store.py` 存「关会话」后的摘要提纲；API 前端另用 **localStorage** 缓存页面可见的完整对话，便于刷新后回看。 |
 
 ---
 
@@ -60,7 +68,9 @@ flowchart TB
 | `streamlit_app.py` | `streamlit run streamlit_app.py` | 会话内单例 `MultiAgentOrchestrator`；「新对话」调用 `clear_history()`。 |
 | `api_app.py` | `uvicorn api_app:app --host 0.0.0.0 --port 8000` | `session_id` 映射到独立编排器；`GET /` 提供 `static/index.html`。 |
 
-环境变量：至少需 `MODEL_NAME`、`SILICONFLOW_API_KEY`；MySQL 与 RAG 相关见 `.env.example`。
+| `static/index.html` | 浏览器访问 `/` | 聊天 UI：**左侧多会话列表**，每条会话独立 `session_id` 与消息列表；数据在 **`langchain-agent-demo-store-v2`**（JSON）；刷新保留全部窗口；「新对话」新开一条并 reset 上一活跃会话（若有内容）；删除会话会 reset 对应服务端实例。 |
+
+环境变量：至少需 `MODEL_NAME`、`SILICONFLOW_API_KEY`；MySQL、RAG、记忆相关见 `.env.example`。
 
 ---
 
@@ -99,6 +109,36 @@ flowchart TD
 ### 3.2 路由模式（环境变量）
 
 - `MULTI_AGENT_ROUTE_MODE`：`llm`（默认）、`heuristic`、`game`、`account`、`casual`。
+
+### 3.3 会话记忆与上下文（编排器内）
+
+短期、长期与展示三者分工不同：
+
+```mermaid
+flowchart LR
+    subgraph STM["短期 · 进行中"]
+        CH["_stm_chain<br/>用户—助手轮次"]
+        XR["_expand_user_message_with_llm<br/>跨 specialist 指代消解"]
+        SR["_wrap_with_session_recap<br/>全局轮次注入各 Agent"]
+    end
+    subgraph LTM["长期 · 提纲"]
+        SQ["结束会话时<br/>router_llm 摘要"]
+        DB[("memory_store.py<br/>SQLite")]
+        INJ["各 Agent system<br/>注入最近 N 条摘要"]
+    end
+    CH --> XR
+    CH --> SR
+    CH --> SQ
+    SQ --> DB
+    DB --> INJ
+```
+
+| 机制 | 说明 |
+|------|------|
+| `_stm_chain` | 每轮 `(用户原文, 助手回复)`，跨路由合并视图；结束会话或「新对话」时整链送 LLM 压成一段话写入 SQLite（若摘要非空且非「无实质内容」）。 |
+| 指代消解 | `MEMORY_EXPAND_CONTEXT`（默认开）：有历史时用 `router_llm` 把「刚才那个 UID」等改写成显式输入，再交给 specialist。 |
+| 会话轮次注入 | `MEMORY_SESSION_RECAP`（默认开）：把近期 `_stm_chain` 片段拼入本轮交给各 Agent 的文本，避免闲聊侧「看不见」攻略/账号轮次。 |
+| 提纲摘要库 | `MEMORY_RECALL_LAST_N`：新编排器初始化或 `clear_history()` 后从库中取最近若干条，经 `set_long_term_memory` 写入三 Agent。 |
 
 ---
 
@@ -186,10 +226,10 @@ sequenceDiagram
 
 | 文件 | 说明 |
 |------|------|
-| `chatbot_test.py` | 测试/调试用 |
+| `memory_store.py` | SQLite 会话提纲摘要读写；默认路径见 `MEMORY_DB_PATH` / `data/session_memory.sqlite` |
 | `mysql_schema.sql` | 示例库表结构 |
 | `docs/*.txt` | RAG 可索引的文本来源之一（具体路径见 `rag.py` 中数据目录配置） |
-| `static/index.html` | API 模式下的前端页面 |
+| `static/index.html` | API 模式聊天页；消息列表持久化到浏览器 **localStorage**（按会话） |
 
 ---
 
@@ -198,3 +238,4 @@ sequenceDiagram
 - **唯一业务编排中心**是 `orchestrator.py` 中的 `MultiAgentOrchestrator`；三种入口只是「如何收集用户输入、如何展示结果」的差异。
 - **意图**决定走单一专家还是 **composite** 双路 + 合并。
 - **攻略**依赖 **向量知识库 + 可选工具循环**；**账号**依赖 **MySQL 只读**；**闲聊**无工具，避免编造专业数据。
+- **页面历史**靠浏览器本地缓存；**服务端提纲记忆**靠 SQLite；**同一会话内的跨路由上下文**靠 `_stm_chain` + 可选 LLM 消解与轮次注入。

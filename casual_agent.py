@@ -20,30 +20,43 @@ class CasualAgent:
             request_timeout=_timeout,
             max_retries=_retries,
         )
+        self._long_term_memory = ""
+        self._base_system_content = (
+            "你是一个友好、轻松的闲聊伙伴。可以聊日常、心情、趣味话题；"
+            "不要冒充游戏数据库或攻略权威；若用户问起专业攻略或账号数据，"
+            "简短说明这类问题更适合对应的专门助手即可，不必展开编造。\n"
+            "若用户消息中包含「本会话此前轮次」，那是本对话中真实发生过的跨助手记录，"
+            "用户追问「刚才问过什么」时应依据该段如实概括，不要说看不到历史。"
+        )
         self.messages: list = [
-            SystemMessage(
-                content=(
-                    "你是一个友好、轻松的闲聊伙伴。可以聊日常、心情、趣味话题；"
-                    "不要冒充游戏数据库或攻略权威；若用户问起专业攻略或账号数据，"
-                    "简短说明这类问题更适合对应的专门助手即可，不必展开编造。"
-                )
-            ),
+            SystemMessage(content=self._base_system_content),
         ]
+
+    def set_long_term_memory(self, text: str | None) -> None:
+        self._long_term_memory = (text or "").strip()
 
     def clear_history(self) -> None:
-        self.messages = [
-            SystemMessage(
-                content=(
-                    "你是一个友好、轻松的闲聊伙伴。可以聊日常、心情、趣味话题；"
-                    "不要冒充游戏数据库或攻略权威；若用户问起专业攻略或账号数据，"
-                    "简短说明这类问题更适合对应的专门助手即可，不必展开编造。"
+        self.messages = [SystemMessage(content=self._base_system_content)]
+        if self._long_term_memory:
+            self.messages.append(
+                SystemMessage(
+                    content=(
+                        "【过往会话摘要（提纲，仅供参考）】\n"
+                        f"{self._long_term_memory}"
+                    )
                 )
-            ),
-        ]
+            )
 
     def trim_messages(self, max_len: int = 40):
-        if len(self.messages) > max_len:
-            self.messages = [self.messages[0]] + self.messages[-max_len + 1 :]
+        prefix_n = 2 if self._long_term_memory else 1
+        if len(self.messages) <= max_len:
+            return
+        head = self.messages[:prefix_n]
+        tail_n = max_len - prefix_n
+        if tail_n < 1:
+            tail_n = 1
+        tail = self.messages[-tail_n:]
+        self.messages = head + tail
 
     def chat(self, user_input: str) -> str:
         self.messages.append(HumanMessage(content=user_input))

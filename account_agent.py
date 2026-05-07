@@ -36,12 +36,26 @@ class AccountAgent:
             self._max_agent_steps = 12
         self._max_agent_steps = max(1, min(self._max_agent_steps, 50))
 
+        self._long_term_memory = ""
         self.messages: list = [
             SystemMessage(content=self.build_system_prompt()),
         ]
 
+    def set_long_term_memory(self, text: str | None) -> None:
+        self._long_term_memory = (text or "").strip()
+
     def clear_history(self) -> None:
         self.messages = [SystemMessage(content=self.build_system_prompt())]
+        if self._long_term_memory:
+            self.messages.append(
+                SystemMessage(
+                    content=(
+                        "【过往会话摘要（提纲，仅供参考）】\n"
+                        "以下为以往对话压缩后的要点；查询数据库时仍以工具返回为准。\n"
+                        f"{self._long_term_memory}"
+                    )
+                )
+            )
 
     def build_system_prompt(self) -> str:
         default_uid = (os.getenv("DEFAULT_PLAYER_UID") or "").strip()
@@ -72,8 +86,15 @@ class AccountAgent:
         return "\n".join(lines)
 
     def trim_messages(self, max_len: int = 24):
-        if len(self.messages) > max_len:
-            self.messages = [self.messages[0]] + self.messages[-max_len + 1 :]
+        prefix_n = 2 if self._long_term_memory else 1
+        if len(self.messages) <= max_len:
+            return
+        head = self.messages[:prefix_n]
+        tail_n = max_len - prefix_n
+        if tail_n < 1:
+            tail_n = 1
+        tail = self.messages[-tail_n:]
+        self.messages = head + tail
 
     def _invoke_tool(self, name: str, args: dict[str, Any]) -> str:
         print(f"[账号Tool] {name} 参数: {args}")

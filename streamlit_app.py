@@ -3,6 +3,7 @@
 # 需先在 .env 配置 MODEL_NAME、SILICONFLOW_API_KEY（与 main.py 相同）
 
 import os
+import uuid
 
 import streamlit as st
 from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
@@ -14,6 +15,8 @@ load_dotenv()
 
 def _ensure_bot() -> MultiAgentOrchestrator:
     """确保当前会话有多 Agent 编排器；首次访问时按 .env 创建实例。"""
+    if st.session_state.get("memory_session_key") is None:
+        st.session_state.memory_session_key = str(uuid.uuid4())
     if st.session_state.get("bot") is None:
         # model/key：模型配置与鉴权信息，来自环境变量。
         model = (os.getenv("MODEL_NAME") or "").strip()
@@ -21,7 +24,11 @@ def _ensure_bot() -> MultiAgentOrchestrator:
         if not model or not key:
             st.error("请在项目根目录 `.env` 中配置 `MODEL_NAME` 与 `SILICONFLOW_API_KEY`。")
             st.stop()
-        st.session_state.bot = MultiAgentOrchestrator(model_name=model, api_key=key)
+        st.session_state.bot = MultiAgentOrchestrator(
+            model_name=model,
+            api_key=key,
+            session_key=st.session_state.memory_session_key,
+        )
     return st.session_state.bot
 
 
@@ -33,10 +40,12 @@ with st.sidebar:
     if st.button("新对话"):
         # 页面展示层的聊天记录（仅用于 UI 回显）。
         st.session_state.messages = []
-        # 业务层编排器（各 Agent 独立多轮上下文）。
+        # 业务层：先将本会话链摘要入库并加载提纲，再换新 session_key 与编排器实例。
         bot = st.session_state.get("bot")
         if bot is not None:
             bot.clear_history()
+        st.session_state.memory_session_key = str(uuid.uuid4())
+        st.session_state.bot = None
         st.rerun()
 
 # 首次进入页面时初始化消息列表状态。

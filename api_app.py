@@ -60,7 +60,11 @@ def _get_or_create_bot(session_id: str | None) -> tuple[str, MultiAgentOrchestra
     sid = (session_id or "").strip() or str(uuid.uuid4())
     with _sessions_lock:
         if sid not in _sessions:
-            _sessions[sid] = MultiAgentOrchestrator(model_name=model, api_key=api_key)
+            _sessions[sid] = MultiAgentOrchestrator(
+                model_name=model,
+                api_key=api_key,
+                session_key=sid,
+            )
         return sid, _sessions[sid]
 
 
@@ -128,14 +132,16 @@ def api_chat(body: ChatRequest):
 @app.post("/api/chat/reset")
 def api_reset(body: ResetRequest):
     """
-    重置会话接口：移除对应 session 的编排器实例。
+    重置会话接口：先将本会话多轮链摘要入库，再移除编排器实例。
 
-    删除后该会话历史不再保留；前端下次聊天会创建新会话实例。
+    删除后进程内短期上下文清空；提纲摘要保留在 SQLite 供后续会话注入。
     """
     sid = body.session_id.strip()
+    bot: MultiAgentOrchestrator | None = None
     with _sessions_lock:
-        # 删除会话对应的编排器，让下次请求重新创建实例。
-        _sessions.pop(sid, None)
+        bot = _sessions.pop(sid, None)
+    if bot is not None:
+        bot.finalize_before_drop()
     return {"ok": True}
 
 

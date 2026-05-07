@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage  # pyright: igno
 from account_agent import AccountAgent
 from casual_agent import CasualAgent
 from chatbot import ChatBot
+from memory_store import append_summary, format_recent_for_prompt
 
 # 路由决策的四种结果：game 攻略 | account 查库 | casual 闲聊 | composite 攻略+查库 双路
 Intent = Literal["game", "account", "casual", "composite"]
@@ -25,12 +26,16 @@ class MultiAgentOrchestrator:
     原「原神深渊与养成」能力仍由 ChatBot 承担，逻辑未改。
     """
 
-    def __init__(self, model_name: str, api_key: str):
+    def __init__(self, model_name: str, api_key: str, session_key: str | None = None):
         # 与三个 specialist 共用的请求参数（SiliconFlow OpenAI 兼容接口）
         _timeout = int(os.getenv("LLM_REQUEST_TIMEOUT", "120"))
         _retries = int(os.getenv("LLM_MAX_RETRIES", "2"))
         self._model_name = model_name
         self._api_key = api_key
+        # 用于摘要落库维度（API 为 session_id；CLI/Streamlit 可自定义）。
+        self._session_key = (session_key or "default").strip() or "default"
+        # 短期记忆：本会话内用户—助手轮次链（结束会话时交给大模型压成一段话）。
+        self._stm_chain: list[tuple[str, str]] = []
         # 专用「编排大脑」：意图分类、复合问题拆分、最终合并回答（temperature=0 求稳）
         self.router_llm = ChatOpenAI(
             model=model_name,
@@ -46,13 +51,156 @@ class MultiAgentOrchestrator:
         self.casual_bot = CasualAgent(model_name=model_name, api_key=api_key)
         # 本会话最近解析到的游戏 UID（用于跨轮：下文只说「他/上文」仍可走账号库 + 攻略）
         self._last_uid: str | None = None
+        self._reload_ltm_into_agents()
 
-    def clear_history(self) -> None:
-        # 网页「新对话」等场景：清空三个 Agent 的对话，避免串上下文
+    def _memory_recall_limit(self) -> int:
+        try:
+            return max(1, min(int((os.getenv("MEMORY_RECALL_LAST_N") or "5").strip()), 50))
+        except ValueError:
+            return 5
+
+    def _reload_ltm_into_agents(self) -> None:
+        """从 SQLite 读取最近若干条提纲摘要，写入三个 specialist 并重置其对话（保留摘要条）。"""
+        blob = format_recent_for_prompt(self._memory_recall_limit())
+        self.game_bot.set_long_term_memory(blob)
+        self.account_bot.set_long_term_memory(blob)
+        self.casual_bot.set_long_term_memory(blob)
         self.game_bot.clear_history()
         self.account_bot.clear_history()
         self.casual_bot.clear_history()
+
+    def _format_stm_chain(self) -> str:
+        lines: list[str] = []
+        for i, (u, a) in enumerate(self._stm_chain, 1):
+            lines.append(f"轮次{i}\n用户：{u}\n助手：{a}")
+        return "\n\n".join(lines)
+
+    def _expand_context_enabled(self) -> bool:
+        raw = (os.getenv("MEMORY_EXPAND_CONTEXT") or "1").strip().lower()
+        return raw not in ("0", "false", "no", "off")
+
+    def _expand_max_rounds(self) -> int:
+        try:
+            return max(1, min(int((os.getenv("MEMORY_EXPAND_MAX_ROUNDS") or "24").strip()), 80))
+        except ValueError:
+            return 24
+
+    def _format_stm_chain_for_expand(self) -> str:
+        """指代消解用的近期片段（避免链过长占满上下文）。"""
+        pairs = self._stm_chain[-self._expand_max_rounds() :]
+        lines: list[str] = []
+        for i, (u, a) in enumerate(pairs, 1):
+            lines.append(f"轮次{i}\n用户：{u}\n助手：{a}")
+        return "\n\n".join(lines)
+
+    def _session_recap_enabled(self) -> bool:
+        """是否把本会话跨路由轮次一并交给下游 Agent（补齐全局短期记忆）。"""
+        raw = (os.getenv("MEMORY_SESSION_RECAP") or "1").strip().lower()
+        return raw not in ("0", "false", "no", "off")
+
+    def _session_recap_rounds(self) -> int:
+        try:
+            return max(1, min(int((os.getenv("MEMORY_SESSION_RECAP_ROUNDS") or "20").strip()), 80))
+        except ValueError:
+            return 20
+
+    def _wrap_with_session_recap(self, inner: str) -> str:
+        """
+        在交给 specialist 的文本前附上编排器维护的全局轮次（攻略/账号/闲聊合并视图）。
+        解决「闲聊 Agent 看不到其它助手轮次」导致的假失忆。
+        """
+        inner = (inner or "").strip()
+        if not self._session_recap_enabled() or not self._stm_chain:
+            return inner
+        pairs = self._stm_chain[-self._session_recap_rounds() :]
+        lines: list[str] = []
+        for i, (u, a) in enumerate(pairs, 1):
+            lines.append(f"轮次{i}\n用户：{u}\n助手：{a}")
+        body = "\n\n".join(lines)
+        if not body:
+            return inner
+        return (
+            "【本会话此前轮次（跨攻略 / 账号 / 闲聊路由，与 specialist 各自上下文同步）】\n"
+            f"{body}\n\n"
+            "【当前任务】\n"
+            f"{inner}"
+        )
+
+    def _expand_user_message_with_llm(self, user_input: str) -> str:
+        """
+        用编排器已记录的跨 specialist 对话链，把「上文那个数 / 刚才的 UID」等
+        改写成自洽的一句用户话，再交给下游 Agent（比关键词规则更通用）。
+        """
+        q = (user_input or "").strip()
+        if not q or not self._stm_chain:
+            return q
+        transcript = self._format_stm_chain_for_expand()
+        sys = SystemMessage(
+            content=(
+                "你是对话上下文理解模块。下方「历史轮次」来自同一会话中用户与助手的多轮对话"
+                "（可能涉及闲聊、攻略、账号等不同助手），按时间顺序排列。\n"
+                "用户即将发送「当前输入」。若其中含指代（如「刚才算的数」「上文提到的 UID」"
+                "「那个结果」「五位数」），且根据历史可**唯一或合理**推出具体数字、名称或 UID，"
+                "请改写为一句完整、可独立执行的用户请求，必须写出明确实体（如 10001）。\n"
+                "若历史不足以确定、或无需改写，则原样输出「当前输入」一字不改。\n"
+                "只输出改写后的用户话本身，不要解释、不要前后缀、不要使用 markdown。"
+            )
+        )
+        human = HumanMessage(
+            content=f"【历史轮次】\n{transcript}\n\n【当前输入】\n{q}"
+        )
+        try:
+            msg = self.router_llm.invoke([sys, human])
+            out = (msg.content or "").strip()
+            # 少数模型会包一层引号或多余换行
+            if out.startswith('"') and out.endswith('"') and len(out) >= 2:
+                out = out[1:-1].strip()
+            return out if out else q
+        except Exception as e:
+            print(f"[编排] 指代展开失败，使用原句: {e}")
+            return q
+
+    def _summarize_chain_with_llm(self, transcript: str) -> str:
+        """将会话实录交给大模型，生成一段提纲式摘要。"""
+        if not transcript.strip():
+            return ""
+        sys = SystemMessage(
+            content=(
+                "你是会话摘要员。下面是一段用户与助手的多轮对话实录。\n"
+                "请用一段中文概括（建议 200 字以内）：主题、用户意图、关键事实（如 UID、角色名、关卡），"
+                "不要逐句复述。若无实质内容则只输出「无实质内容」。"
+            )
+        )
+        human = HumanMessage(content=transcript)
+        try:
+            msg = self.router_llm.invoke([sys, human])
+            return (msg.content or "").strip()
+        except Exception as e:
+            print(f"[memory] LLM 摘要失败，使用截断 fallback: {e}")
+            cap = 600
+            return transcript[:cap] + ("…" if len(transcript) > cap else "")
+
+    def _persist_stm_chain(self) -> None:
+        """把短期链交给模型摘要后写入长期存储，并清空链。"""
+        if not self._stm_chain:
+            return
+        transcript = self._format_stm_chain()
+        summary = self._summarize_chain_with_llm(transcript)
+        if summary and summary != "无实质内容":
+            append_summary(self._session_key, summary)
+        self._stm_chain.clear()
+
+    def finalize_before_drop(self) -> None:
+        """进程内丢弃编排器前调用：仅落盘摘要，不刷新各 Agent（实例即将销毁）。"""
+        self._persist_stm_chain()
+
+    def clear_history(self) -> None:
+        """
+        「新对话」或等价场景：先将本会话链摘要入库，再加载最新提纲到各 Agent 并重置多轮。
+        """
+        self._persist_stm_chain()
         self._last_uid = None
+        self._reload_ltm_into_agents()
 
     def _signals_game(self, t: str) -> bool:
         # 浅层关键词命中：用于启发式路由与 LLM 路由结果的纠偏（非穷尽游戏语义，只求常见攻略问法）
@@ -381,28 +529,46 @@ class MultiAgentOrchestrator:
         if intent == "game" and self._cross_turn_composite_hint(user_input):
             intent = "composite"
 
+        raw = user_input.strip()
+        agent_input = (
+            self._expand_user_message_with_llm(raw)
+            if (self._expand_context_enabled() and self._stm_chain)
+            else raw
+        )
+        uid_from_agent = self._extract_uid(agent_input)
+        if uid_from_agent:
+            self._last_uid = uid_from_agent
+
+        delegation_input = self._wrap_with_session_recap(agent_input)
+
         if intent == "composite":
             # 1) 拆成两个子问 → 2) 攻略 Bot / 账号 Bot 各答一段 → 3) 有双份结果再合并
-            gq, aq = self._decompose_composite(user_input)
-            gq, aq = self._ensure_composite_queries(user_input, gq, aq)
-            game_reply = self.game_bot.chat(gq) if gq.strip() else ""
-            account_reply = self.account_bot.chat(aq) if aq.strip() else ""
+            gq, aq = self._decompose_composite(agent_input)
+            gq, aq = self._ensure_composite_queries(agent_input, gq, aq)
+            game_reply = (
+                self.game_bot.chat(self._wrap_with_session_recap(gq)) if gq.strip() else ""
+            )
+            account_reply = (
+                self.account_bot.chat(self._wrap_with_session_recap(aq)) if aq.strip() else ""
+            )
             if game_reply and account_reply:
-                reply = self._synthesize(user_input, game_reply, account_reply)
+                reply = self._synthesize(agent_input, game_reply, account_reply)
             elif game_reply:
                 reply = game_reply
             elif account_reply:
                 reply = account_reply
             else:
                 # 两路都空：退回用整句问攻略（至少不给用户空白）
-                reply = self.game_bot.chat(user_input)
+                reply = self.game_bot.chat(delegation_input)
+            self._stm_chain.append((raw, reply.strip()))
             return reply, "composite"
 
         if intent == "account":
-            reply = self.account_bot.chat(user_input)
+            reply = self.account_bot.chat(delegation_input)
         elif intent == "casual":
-            reply = self.casual_bot.chat(user_input)
+            reply = self.casual_bot.chat(delegation_input)
         else:
             # intent == "game" 及未列出的情况：默认走原 ChatBot（攻略 + 工具）
-            reply = self.game_bot.chat(user_input)
+            reply = self.game_bot.chat(delegation_input)
+        self._stm_chain.append((raw, reply.strip()))
         return reply, intent

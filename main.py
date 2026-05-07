@@ -4,8 +4,11 @@
 程序入口：多 Agent 协同对话（自动路由至攻略 / 账号库 / 闲聊）。
 """
 
+import atexit
 import os
+
 from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
+
 from orchestrator import MultiAgentOrchestrator
 
 
@@ -16,7 +19,9 @@ load_dotenv()
 bot = MultiAgentOrchestrator(
     model_name=os.getenv("MODEL_NAME"),
     api_key=os.getenv("SILICONFLOW_API_KEY"),
+    session_key="cli",
 )
+atexit.register(bot.finalize_before_drop)
 
 
 # CLI 循环

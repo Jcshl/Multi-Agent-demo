@@ -20,6 +20,13 @@ except ImportError as _e:  # pragma: no cover
         file=sys.stderr,
     )
 
+# MySQL 8 默认 caching_sha2_password：PyMySQL 连接时必须能导入 cryptography，否则会报含糊错误。
+try:
+    import cryptography  # noqa: F401  # pyright: ignore[reportMissingImports]
+    _CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:
+    _CRYPTOGRAPHY_AVAILABLE = False
+
 
 def mysql_configured() -> bool:
     """是否已在环境中配置完整的数据库连接参数。"""
@@ -58,6 +65,14 @@ def mysql_connection() -> Iterator[Any]:
         )
     if not mysql_configured():
         raise RuntimeError("MySQL 未配置：请设置 MYSQL_HOST、MYSQL_USER、MYSQL_PASSWORD、MYSQL_DATABASE。")
+    if not _CRYPTOGRAPHY_AVAILABLE:
+        raise RuntimeError(
+            "当前 Python 环境未安装 cryptography，无法使用 MySQL 8 默认认证（caching_sha2_password）。\n"
+            f"解释器路径: {sys.executable}\n"
+            "请确认：① 终端 `cd` 的目录是**正在开发的那份**含 `api_app.py` 的仓库根（看该目录的 `pyproject.toml` 里是否包含 `cryptography` 依赖）。\n"
+            "② 在该根目录执行 `uv sync` 后，用 `uv run python -c \"import cryptography\"` 应无报错，再 `uv run uvicorn ...`。\n"
+            "若 `pyproject.toml` 里本来没有 `cryptography`，需先加入依赖并 `uv lock` / `uv sync`。"
+        )
     conn = pymysql.connect(**_connect_kwargs())
     try:
         yield conn

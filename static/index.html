@@ -13,6 +13,7 @@
       --text: #1a1d26;
       --muted: #5c647a;
       --accent: #2563eb;
+      --danger: #dc2626;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -22,6 +23,7 @@
         --text: #e8eaef;
         --muted: #9aa3b8;
         --accent: #60a5fa;
+        --danger: #f87171;
       }
     }
     * { box-sizing: border-box; }
@@ -34,8 +36,101 @@
       display: flex;
       flex-direction: column;
     }
+    .app {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      height: 100vh;
+    }
+    /* --- 左侧会话列表 --- */
+    .sidebar {
+      width: min(280px, 92vw);
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .sidebar-top {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-top button.primary {
+      width: 100%;
+      font: inherit;
+      cursor: pointer;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      padding: 0.55rem 0.85rem;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .sidebar-top button.primary:hover { filter: brightness(1.05); }
+    .conv-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+      margin: 0;
+      padding: 0.45rem;
+    }
+    .conv-item {
+      padding: 0.55rem 0.5rem 0.55rem 0.65rem;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      border: 1px solid transparent;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.35rem;
+      position: relative;
+    }
+    .conv-item:hover:not(.active) { background: var(--bg); }
+    .conv-item.active {
+      background: color-mix(in srgb, var(--accent) 14%, var(--card));
+      border-color: var(--border);
+    }
+    .conv-body {
+      flex: 1;
+      min-width: 0;
+    }
+    .conv-title {
+      font-size: 0.875rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.35;
+    }
+    .conv-meta {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+    .conv-del {
+      flex-shrink: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0.15rem 0.35rem;
+      border-radius: 6px;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .conv-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+    /* --- 右侧主区域 --- */
+    .main-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
     header {
-      padding: 1rem 1.25rem;
+      padding: 0.75rem 1rem;
       border-bottom: 1px solid var(--border);
       background: var(--card);
       display: flex;
@@ -44,13 +139,13 @@
       gap: 1rem;
       flex-wrap: wrap;
     }
-    h1 { font-size: 1.125rem; margin: 0; font-weight: 600; }
+    h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
     .actions { display: flex; gap: 0.5rem; align-items: center; }
     .actions a.link {
-      font-size: 0.875rem;
+      font-size: 0.8125rem;
       color: var(--accent);
       text-decoration: none;
-      padding: 0.45rem 0.65rem;
+      padding: 0.35rem 0.55rem;
       border-radius: 8px;
     }
     .actions a.link:hover { text-decoration: underline; }
@@ -73,12 +168,12 @@
       flex: 1;
       overflow-y: auto;
       padding: 1rem;
-      max-width: 720px;
-      width: 100%;
-      margin: 0 auto;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
     }
     .bubble {
       max-width: 92%;
@@ -95,16 +190,17 @@
     .bubble.assistant { align-self: flex-start; }
     .bubble .role { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.04em; }
     footer {
-      padding: 0.75rem 1rem 1.25rem;
+      padding: 0.75rem 1rem 1rem;
       border-top: 1px solid var(--border);
       background: var(--card);
     }
     .composer {
-      max-width: 720px;
+      max-width: 800px;
       margin: 0 auto;
       display: flex;
       gap: 0.5rem;
       align-items: flex-end;
+      width: 100%;
     }
     textarea {
       flex: 1;
@@ -118,50 +214,165 @@
       background: var(--bg);
       color: var(--text);
     }
-    .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; max-width: 720px; margin-left: auto; margin-right: auto; padding: 0 0.25rem; }
+    .hint {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 0 0.25rem;
+      line-height: 1.45;
+    }
+    .hint strong { color: var(--text); font-weight: 600; }
+
+    @media (max-width: 640px) {
+      .app { flex-direction: column; height: auto; min-height: 100vh; }
+      .sidebar {
+        width: 100%;
+        max-height: 42vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>多 Agent 协同 · 原神助手</h1>
-    <div class="actions">
-      <a class="link" href="/presentation">项目展示</a>
-      <button type="button" id="btnNew">新对话</button>
+  <div class="app">
+    <aside class="sidebar" aria-label="会话列表">
+      <div class="sidebar-top">
+        <button type="button" class="primary" id="btnNew">+ 新对话</button>
+      </div>
+      <ul id="convList" class="conv-list"></ul>
+    </aside>
+    <div class="main-col">
+      <header>
+        <h1>多 Agent 协同 · 原神助手</h1>
+        <div class="actions">
+          <a class="link" href="/presentation">项目展示</a>
+        </div>
+      </header>
+      <div id="log" aria-live="polite"></div>
+      <footer>
+        <div class="composer">
+          <textarea id="input" rows="2" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <button type="button" class="primary" id="btnSend">发送</button>
+        </div>
+        <p class="hint">
+          <strong>多窗口会话</strong>：左侧每条为独立对话（对应服务端独立 session）；切换即切换上下文。
+          记录保存在本机浏览器。新对话 / 删除会话会在<strong>后台</strong>请求服务端 reset（摘要入库），不阻塞界面。
+        </p>
+      </footer>
     </div>
-  </header>
-  <div id="log" aria-live="polite"></div>
-  <footer>
-    <div class="composer">
-      <textarea id="input" rows="2" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
-      <button type="button" class="primary" id="btnSend">发送</button>
-    </div>
-    <p class="hint">会话保存在本机浏览器；服务端按 session 保留多轮上下文（进程重启后需重新对话）。</p>
-  </footer>
+  </div>
   <script>
-    const STORAGE_KEY = "langchain-agent-demo-session";
+    const STORE_KEY = "langchain-agent-demo-store-v2";
+    const LEGACY_SESSION_KEY = "langchain-agent-demo-session";
+    const TRANSCRIPT_PREFIX = "langchain-agent-demo-transcript:";
+
     const logEl = document.getElementById("log");
     const inputEl = document.getElementById("input");
     const btnSend = document.getElementById("btnSend");
     const btnNew = document.getElementById("btnNew");
+    const convListEl = document.getElementById("convList");
 
-    function getSessionId() {
-      let id = localStorage.getItem(STORAGE_KEY);
-      if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem(STORAGE_KEY, id);
+    /** @type {{ version: number, activeId: string | null, conversations: Array<{ id: string, sessionId: string, title: string, updatedAt: number, messages: { role: string, text: string, intent?: string }[] }> }} */
+    let store;
+
+    function fmtTime(ts) {
+      const d = new Date(ts);
+      const now = Date.now();
+      const diff = now - ts;
+      if (diff < 60_000) return "刚刚";
+      if (diff < 86400_000) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+    }
+
+    function saveStore() {
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      } catch (e) {
+        console.warn("保存会话列表失败", e);
       }
-      return id;
     }
 
-    function setSessionId(id) {
-      localStorage.setItem(STORAGE_KEY, id);
+    function migrateLegacy() {
+      const oldSid = localStorage.getItem(LEGACY_SESSION_KEY);
+      if (!oldSid) return null;
+
+      let messages = [];
+      try {
+        const raw = localStorage.getItem(TRANSCRIPT_PREFIX + oldSid);
+        if (raw) messages = JSON.parse(raw);
+      } catch (_) {}
+
+      localStorage.removeItem(LEGACY_SESSION_KEY);
+      localStorage.removeItem(TRANSCRIPT_PREFIX + oldSid);
+
+      const id = crypto.randomUUID();
+      const firstUser = messages.find((m) => m.role === "user");
+      const title = firstUser && firstUser.text
+        ? firstUser.text.trim().slice(0, 36) + (firstUser.text.length > 36 ? "…" : "")
+        : "历史对话";
+
+      return {
+        version: 2,
+        activeId: id,
+        conversations: [
+          {
+            id,
+            sessionId: oldSid,
+            title,
+            updatedAt: Date.now(),
+            messages: Array.isArray(messages) ? messages : [],
+          },
+        ],
+      };
     }
 
-    function clearSessionId() {
-      localStorage.removeItem(STORAGE_KEY);
+    function emptyConversation() {
+      const id = crypto.randomUUID();
+      return {
+        id,
+        sessionId: crypto.randomUUID(),
+        title: "新对话",
+        updatedAt: Date.now(),
+        messages: [],
+      };
     }
 
-    function appendBubble(role, text, intent) {
+    function loadStore() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (s.version === 2 && Array.isArray(s.conversations) && s.conversations.length > 0) {
+            return s;
+          }
+        }
+      } catch (_) {}
+
+      const migrated = migrateLegacy();
+      if (migrated) {
+        saveStoreInternal(migrated);
+        return migrated;
+      }
+
+      const c = emptyConversation();
+      const initial = { version: 2, activeId: c.id, conversations: [c] };
+      saveStoreInternal(initial);
+      return initial;
+    }
+
+    function saveStoreInternal(s) {
+      localStorage.setItem(STORE_KEY, JSON.stringify(s));
+    }
+
+    function getActiveConv() {
+      return store.conversations.find((c) => c.id === store.activeId) || null;
+    }
+
+    function renderBubble(role, text, intent) {
       const div = document.createElement("div");
       div.className = "bubble " + (role === "user" ? "user" : "assistant");
       const r = document.createElement("div");
@@ -169,7 +380,7 @@
       if (role === "user") {
         r.textContent = "你";
       } else {
-        r.textContent = intent ? ("助手 · " + intent) : "助手";
+        r.textContent = intent ? "助手 · " + intent : "助手";
       }
       div.appendChild(r);
       const t = document.createElement("div");
@@ -179,50 +390,173 @@
       logEl.scrollTop = logEl.scrollHeight;
     }
 
+    function renderMain() {
+      const c = getActiveConv();
+      logEl.innerHTML = "";
+      if (!c) return;
+      for (const m of c.messages) {
+        renderBubble(m.role, m.text, m.intent || "");
+      }
+    }
+
+    function renderSidebar() {
+      convListEl.innerHTML = "";
+      const sorted = [...store.conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+      for (const c of sorted) {
+        const li = document.createElement("li");
+        li.className = "conv-item" + (c.id === store.activeId ? " active" : "");
+        li.dataset.id = c.id;
+
+        const body = document.createElement("div");
+        body.className = "conv-body";
+        const title = document.createElement("div");
+        title.className = "conv-title";
+        title.textContent = c.title || "新对话";
+        const meta = document.createElement("div");
+        meta.className = "conv-meta";
+        meta.textContent = fmtTime(c.updatedAt);
+        body.appendChild(title);
+        body.appendChild(meta);
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "conv-del";
+        del.title = "删除此会话";
+        del.setAttribute("aria-label", "删除");
+        del.textContent = "×";
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteConversation(c.id);
+        });
+
+        li.appendChild(body);
+        li.appendChild(del);
+        li.addEventListener("click", () => selectConversation(c.id));
+        convListEl.appendChild(li);
+      }
+    }
+
+    function selectConversation(id) {
+      if (store.activeId === id) return;
+      store.activeId = id;
+      saveStore();
+      renderSidebar();
+      renderMain();
+      inputEl.focus();
+    }
+
+    /**
+     * 通知服务端结束该 session（会触发摘要写入 SQLite，可能较慢）。
+     * 新对话 / 删会话时应「 fire-and-forget 」，勿 await，避免卡住界面。
+     */
+    function resetSessionRemote(sessionId) {
+      return fetch("/api/chat/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      }).catch(() => {});
+    }
+
+    function deleteConversation(id) {
+      const conv = store.conversations.find((c) => c.id === id);
+      const sidToReset = conv ? conv.sessionId : null;
+
+      store.conversations = store.conversations.filter((c) => c.id !== id);
+      if (store.conversations.length === 0) {
+        const nc = emptyConversation();
+        store.conversations.push(nc);
+        store.activeId = nc.id;
+      } else if (store.activeId === id) {
+        store.activeId = store.conversations[0].id;
+      }
+      saveStore();
+      renderSidebar();
+      renderMain();
+
+      if (sidToReset) void resetSessionRemote(sidToReset);
+    }
+
+    function bumpConvMeta(conv, opts) {
+      conv.updatedAt = Date.now();
+      if (opts && opts.firstUserText) {
+        const t = opts.firstUserText.trim();
+        conv.title = t.slice(0, 36) + (t.length > 36 ? "…" : "");
+      }
+    }
+
+    function newChat() {
+      const prev = getActiveConv();
+      if (prev && prev.messages.length > 0) {
+        void resetSessionRemote(prev.sessionId);
+      }
+      const c = emptyConversation();
+      store.conversations.push(c);
+      store.activeId = c.id;
+      saveStore();
+      renderSidebar();
+      renderMain();
+      inputEl.focus();
+    }
+
     async function send() {
       const text = inputEl.value.trim();
       if (!text) return;
+      const conv = getActiveConv();
+      if (!conv) return;
+
       inputEl.value = "";
-      appendBubble("user", text);
+      conv.messages.push({ role: "user", text, intent: undefined });
+      bumpConvMeta(conv, conv.messages.filter((m) => m.role === "user").length === 1 ? { firstUserText: text } : {});
+      saveStore();
+      renderBubble("user", text, "");
+      renderSidebar();
       btnSend.disabled = true;
+
       try {
-        const sid = getSessionId();
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, session_id: sid }),
+          body: JSON.stringify({ message: text, session_id: conv.sessionId }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           const msg = data.detail || data.message || res.statusText || "请求失败";
-          appendBubble("assistant", typeof msg === "string" ? msg : JSON.stringify(msg));
+          const errText = typeof msg === "string" ? msg : JSON.stringify(msg);
+          conv.messages.push({ role: "assistant", text: errText, intent: "" });
+          bumpConvMeta(conv);
+          saveStore();
+          renderBubble("assistant", errText, "");
+          renderSidebar();
           return;
         }
-        if (data.session_id) setSessionId(data.session_id);
-        appendBubble("assistant", data.reply || "", data.intent || "");
+        if (data.session_id) conv.sessionId = data.session_id;
+        const reply = data.reply || "";
+        const intent = data.intent || "";
+        conv.messages.push({ role: "assistant", text: reply, intent });
+        bumpConvMeta(conv);
+        saveStore();
+        renderBubble("assistant", reply, intent);
+        renderSidebar();
       } catch (e) {
-        appendBubble("assistant", "网络错误：" + (e && e.message ? e.message : String(e)));
+        const errText = "网络错误：" + (e && e.message ? e.message : String(e));
+        conv.messages.push({ role: "assistant", text: errText, intent: "" });
+        bumpConvMeta(conv);
+        saveStore();
+        renderBubble("assistant", errText, "");
+        renderSidebar();
       } finally {
         btnSend.disabled = false;
         inputEl.focus();
       }
     }
 
-    async function newChat() {
-      const sid = localStorage.getItem(STORAGE_KEY);
-      if (sid) {
-        try {
-          await fetch("/api/chat/reset", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ session_id: sid }),
-          });
-        } catch (_) { /* ignore */ }
-      }
-      clearSessionId();
-      logEl.innerHTML = "";
-      inputEl.focus();
+    store = loadStore();
+    if (!store.activeId && store.conversations.length) {
+      store.activeId = store.conversations[0].id;
+      saveStore();
     }
+    renderSidebar();
+    renderMain();
 
     btnSend.addEventListener("click", send);
     btnNew.addEventListener("click", newChat);

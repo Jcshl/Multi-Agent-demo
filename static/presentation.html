@@ -304,7 +304,7 @@
     <section class="slide" id="slide-arch" data-title="架构">
       <div class="slide-inner">
         <h2><span class="num">02</span>分层架构</h2>
-        <p class="line">三种入口（CLI / Streamlit / FastAPI）共用同一 <code style="color: var(--accent);">MultiAgentOrchestrator.chat()</code>，底层再接工具与数据。</p>
+        <p class="line">三种入口（CLI / Streamlit / FastAPI）共用同一 <code style="color: var(--accent);">MultiAgentOrchestrator.chat()</code>；编排器维护跨路由短期链、可选指代消解与轮次注入，关会话后摘要入 SQLite；Web 端另用 <strong style="color: var(--text)">localStorage</strong> 缓存完整聊天以便刷新回看。</p>
         <div class="diagram-wrap">
           <pre class="mermaid">
 flowchart TB
@@ -325,12 +325,18 @@ flowchart TB
     RAG["RAG FAISS"]
     SQL["MySQL 只读"]
   end
+  subgraph MEM["记忆与展示"]
+    SQLITE["SQLite 提纲"]
+    LS["localStorage 聊天"]
+  end
   L1 --> ORCH
   ORCH --> G
   ORCH --> A
   ORCH --> C
   G --> RAG
   A --> SQL
+  ORCH --> SQLITE
+  API --> LS
           </pre>
         </div>
       </div>

@@ -51,14 +51,30 @@ class ChatBot:
             self._max_agent_steps = 12
         self._max_agent_steps = max(1, min(self._max_agent_steps, 50))
 
+        # 跨会话注入的「提纲式」长期记忆（由编排器从 SQLite 加载）。
+        self._long_term_memory = ""
         # 多轮对话历史；首条固定为系统提示词。
         self.messages: list = [
             SystemMessage(content=self.build_system_prompt()),
         ]
 
+    def set_long_term_memory(self, text: str | None) -> None:
+        """设置提纲摘要文本；空字符串表示不注入。"""
+        self._long_term_memory = (text or "").strip()
+
     def clear_history(self) -> None:
         """清空多轮对话，仅保留 system prompt（用于网页端「新对话」）。"""
         self.messages = [SystemMessage(content=self.build_system_prompt())]
+        if self._long_term_memory:
+            self.messages.append(
+                SystemMessage(
+                    content=(
+                        "【过往会话摘要（提纲，仅供参考）】\n"
+                        "以下为以往对话压缩后的要点，细节可能已省略；本轮请以用户原话与当前检索为准。\n"
+                        f"{self._long_term_memory}"
+                    )
+                )
+            )
 
     def build_system_prompt(self) -> str:
         """构造系统提示词，并动态附加当前可用工具说明。"""
@@ -79,9 +95,16 @@ class ChatBot:
         return "\n".join(lines)
 
     def trim_messages(self, max_len: int = 24):
-        """保留 system + 最近若干条消息（工具循环会较快占满上下文）。"""
-        if len(self.messages) > max_len:
-            self.messages = [self.messages[0]] + self.messages[-max_len + 1 :]
+        """保留 system（及可选摘要条）+ 最近若干条消息（工具循环会较快占满上下文）。"""
+        prefix_n = 2 if self._long_term_memory else 1
+        if len(self.messages) <= max_len:
+            return
+        head = self.messages[:prefix_n]
+        tail_n = max_len - prefix_n
+        if tail_n < 1:
+            tail_n = 1
+        tail = self.messages[-tail_n:]
+        self.messages = head + tail
 
     def _invoke_tool(self, name: str, args: dict[str, Any]) -> str:
         """
