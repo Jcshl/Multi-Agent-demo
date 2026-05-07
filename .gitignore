@@ -18,6 +18,7 @@ models/
 
 # IDE
 .idea/
+.vscode/
 
 # Local session memory (SQLite)
 data/

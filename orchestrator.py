@@ -50,7 +50,7 @@ class MultiAgentOrchestrator:
         self.account_bot = AccountAgent(model_name=model_name, api_key=api_key)
         self.casual_bot = CasualAgent(model_name=model_name, api_key=api_key)
         # 本会话最近解析到的游戏 UID（用于跨轮：下文只说「他/上文」仍可走账号库 + 攻略）
-        self._last_uid: str | None = None
+        self._last_uid: str | None = self._env_default_uid()
         self._reload_ltm_into_agents()
 
     def _memory_recall_limit(self) -> int:
@@ -199,7 +199,7 @@ class MultiAgentOrchestrator:
         「新对话」或等价场景：先将本会话链摘要入库，再加载最新提纲到各 Agent 并重置多轮。
         """
         self._persist_stm_chain()
-        self._last_uid = None
+        self._last_uid = self._env_default_uid()
         self._reload_ltm_into_agents()
 
     def _signals_game(self, t: str) -> bool:
@@ -232,19 +232,78 @@ class MultiAgentOrchestrator:
         )
         return any(k in t for k in game_kw)
 
+    def _signals_calculation(self, t: str) -> bool:
+        """
+        纯算术 / 求数值（交给 ChatBot 的 calculator），避免误入闲聊 Agent。
+        """
+        s = (t or "").strip()
+        if not s:
+            return False
+        calc_kw = (
+            "计算",
+            "算一下",
+            "算算",
+            "口算",
+            "算术",
+            "算式",
+            "求值",
+            "等于多少",
+            "等于几",
+            "是多少",
+            "多少等于",
+            "帮我算",
+            "给算算",
+            "加一加",
+            "乘一下",
+            "列竖式",
+        )
+        if any(k in s for k in calc_kw):
+            return True
+        # 句中出现简易四则片段（含 ×÷ 与相邻运算符）
+        if re.search(r"\d\s*[\+\-\*\/×÷]\s*\d", s):
+            return True
+        if re.search(r"\d[\+\-\*\/×÷]\d", s):
+            return True
+        if re.search(r"\d\s*\*\*\s*\d", s):
+            return True
+        return False
+
     def _has_uid(self, t: str) -> bool:
         """是否出现游戏 UID（显式 uid 或长数字）。"""
         return self._extract_uid(t) is not None
 
+    def _env_default_uid(self) -> str | None:
+        """与 AccountAgent 一致的默认 UID（用户未写出 UID 时库侧仍可查）。"""
+        u = (os.getenv("DEFAULT_PLAYER_UID") or "").strip()
+        return u if u else None
+
     def _extract_uid(self, t: str) -> str | None:
-        """从用户句中提取 UID：`uid12345` / `UID: 10001` / 独立长数字串。"""
+        """从文本中提取 UID：UID: 10001、JSON \"uid\":\"10001\"、独立长数字串（≥9 位）。"""
+        if not (t or "").strip():
+            return None
         uid_m = re.search(r"(?:uid|UID)[为：:\s]*(\d{4,})", t)
         if uid_m:
             return uid_m.group(1)
+        # 工具返回 / 助手复述中的 JSON（含短位演示 UID）
+        json_m = re.search(r'["\']uid["\']\s*:\s*["\']?(\d{4,})["\']?', t)
+        if json_m:
+            return json_m.group(1)
         num_m = re.search(r"(?<![\d.])(\d{9,})(?!\d)", t)
         if num_m:
             return num_m.group(1)
         return None
+
+    def _remember_uid_from_text(self, text: str | None) -> None:
+        """若文本中出现可解析 UID，则刷新会话级 _last_uid（用于助手回复、工具 JSON）。"""
+        u = self._extract_uid(text or "")
+        if u:
+            self._last_uid = u
+
+    def _sync_uid_from_account_agent(self) -> None:
+        """账号 Agent 工具实际使用的 player_uid（含默认 UID），同步到编排器。"""
+        uid = getattr(self.account_bot, "last_resolved_player_uid", None)
+        if uid:
+            self._last_uid = uid
 
     def _cross_turn_composite_hint(self, text: str) -> bool:
         """
@@ -263,6 +322,9 @@ class MultiAgentOrchestrator:
             "该玩家",
             "上文",
             "刚才",
+            "刚刚",
+            "上一次",
+            "上次",
             "之前",
             "前面",
             "这个玩家",
@@ -357,11 +419,15 @@ class MultiAgentOrchestrator:
             "讲个笑话",
             "心情",
         )
+        # 算术优先于「短寒暄→闲聊」，避免「你好，帮我算一下」进闲聊 Agent
+        if self._signals_calculation(t):
+            return "game"
+
         # 短句且以寒暄开头 → 直接闲聊，减少误判
         if any(t.startswith(k) for k in casual_kw) and len(t) < 40:
             return "casual"
 
-        g = self._signals_game(t)
+        g = self._signals_game(t) or self._signals_calculation(t)
         a = self._signals_account_strict(t)
 
         # 攻略 +（UID 或明确查库/角色列表）→ 复合，两路 Agent 都跑
@@ -380,12 +446,13 @@ class MultiAgentOrchestrator:
             content=(
                 "你是意图分类器。仅输出一个 JSON 对象，不要 markdown 围栏，不要其它文字。\n"
                 '格式：{"intent":"game"|"account"|"casual"|"composite"}\n'
-                "- game：仅原神攻略/深渊/boss/机制/配队/伤害计算/知识库相关。\n"
+                "- game：原神攻略/深渊/boss/机制/配队/知识库；以及**一切需要调用工具的数值计算**"
+                "（纯算式、四则运算、幂次、百分比脱手计算、「等于多少」类——走 calculator，仍归 game）。\n"
                 "- account：仅查询玩家账号数据（UID、树脂、角色列表、MySQL），不涉及当期关卡打法。\n"
-                "- casual：日常寒暄、与游戏无关的闲聊。\n"
+                "- casual：日常寒暄、心情、笑话、与解题/算数无关的闲聊。\n"
                 "- composite：同一轮提问里**既要**攻略或 boss 机制/打法**又要**查某 UID 的账号或角色数据"
                 "（例如：先问 12 层 boss 怎么打，同时问 uid10001 有哪些角色能用来打）；"
-                "或「结合上文/刚才提到的 UID」同时需要角色列表与当期 Boss 攻略。\n"
+                "或「结合上文/刚才/刚刚查询的用户信息、账号与角色」定制攻略且仍需要库里的角色列表。\n"
                 "判断不清时倾向 game；若明确只要库表数据则 account。"
             )
         )
@@ -399,6 +466,9 @@ class MultiAgentOrchestrator:
             data = json.loads(text)
             v = (data.get("intent") or "").strip().lower()
             if v in ("game", "account", "casual", "composite"):
+                # 修正：算术/算式被误判为闲聊 → 强制 game（ChatBot + calculator）
+                if v == "casual" and self._signals_calculation(user_input):
+                    return "game"
                 # 修正：模型常把「攻略 + UID」误标为 account
                 if (
                     v == "account"
@@ -462,8 +532,11 @@ class MultiAgentOrchestrator:
         gq = gq.strip()
         aq = aq.strip()
 
-        if not gq and self._signals_game(original):
-            gq = self._game_only_fallback(original)
+        if not gq:
+            if self._signals_game(original):
+                gq = self._game_only_fallback(original)
+            elif self._signals_calculation(original):
+                gq = original.strip()
         if not aq and uid:
             aq = (
                 f"请查询 UID 为 {uid} 的玩家档案、树脂与培养目标；"
@@ -551,6 +624,7 @@ class MultiAgentOrchestrator:
             account_reply = (
                 self.account_bot.chat(self._wrap_with_session_recap(aq)) if aq.strip() else ""
             )
+            self._sync_uid_from_account_agent()
             if game_reply and account_reply:
                 reply = self._synthesize(agent_input, game_reply, account_reply)
             elif game_reply:
@@ -560,15 +634,22 @@ class MultiAgentOrchestrator:
             else:
                 # 两路都空：退回用整句问攻略（至少不给用户空白）
                 reply = self.game_bot.chat(delegation_input)
-            self._stm_chain.append((raw, reply.strip()))
+            reply = reply.strip()
+            self._remember_uid_from_text(game_reply)
+            self._remember_uid_from_text(account_reply)
+            self._remember_uid_from_text(reply)
+            self._stm_chain.append((raw, reply))
             return reply, "composite"
 
         if intent == "account":
             reply = self.account_bot.chat(delegation_input)
+            self._sync_uid_from_account_agent()
         elif intent == "casual":
             reply = self.casual_bot.chat(delegation_input)
         else:
             # intent == "game" 及未列出的情况：默认走原 ChatBot（攻略 + 工具）
             reply = self.game_bot.chat(delegation_input)
-        self._stm_chain.append((raw, reply.strip()))
+        reply = reply.strip()
+        self._remember_uid_from_text(reply)
+        self._stm_chain.append((raw, reply))
         return reply, intent

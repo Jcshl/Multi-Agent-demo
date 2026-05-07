@@ -37,6 +37,8 @@ class AccountAgent:
         self._max_agent_steps = max(1, min(self._max_agent_steps, 50))
 
         self._long_term_memory = ""
+        # 最近一次工具调用中解析到的 UID（供编排器跨轮 composite，无需依赖助手复述）
+        self.last_resolved_player_uid: str | None = None
         self.messages: list = [
             SystemMessage(content=self.build_system_prompt()),
         ]
@@ -45,6 +47,7 @@ class AccountAgent:
         self._long_term_memory = (text or "").strip()
 
     def clear_history(self) -> None:
+        self.last_resolved_player_uid = None
         self.messages = [SystemMessage(content=self.build_system_prompt())]
         if self._long_term_memory:
             self.messages.append(
@@ -81,6 +84,7 @@ class AccountAgent:
                 "1. 需要某玩家数据时，优先使用 get_player_profile；需要角色列表与培养细节时用 list_player_characters。",
                 "2. 仅有 UID 或培养目标片段时用 search_players_by_name_keyword，再根据返回的 uid 继续查询。",
                 "3. 若数据库未配置或查询为空，如实说明，不要臆测。",
+                "4. 若用户只想做纯算术、不涉及账号或数据库，说明此类请求应由攻略助手（计算器工具）处理，不要编造玩家数据。",
             ]
         )
         return "\n".join(lines)
@@ -98,6 +102,10 @@ class AccountAgent:
 
     def _invoke_tool(self, name: str, args: dict[str, Any]) -> str:
         print(f"[账号Tool] {name} 参数: {args}")
+        if name in ("get_player_profile", "list_player_characters"):
+            pu = (args.get("player_uid") or "").strip()
+            if pu:
+                self.last_resolved_player_uid = pu
         tool = self._tool_by_name.get(name)
         if tool is None:
             return f"未知工具: {name}"

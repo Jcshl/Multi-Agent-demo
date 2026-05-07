@@ -87,7 +87,10 @@ def _eval_ast_node(node: ast.AST) -> float:
 
 @tool
 def calculator(expression: str) -> str:
-    """计算数学表达式，仅支持 +、-、*、/、//、%、** 与括号，例如 `1.5 * (800 + 200)`。"""
+    """
+    对用户算式求数值；用户说「算一下」「等于多少」、或需精确数字时优先调用。
+    表达式仅允许数字与 +、-、*、/、//、%、**、英文括号；例：1.5 * (800 + 200)
+    """
 
     # 统一走安全计算逻辑，避免执行任意代码。
     return safe_calculate(expression)
@@ -115,5 +118,5 @@ def rag_search(query: str) -> str:
     return _rag.search(query)
 
 
-# 供 ChatOpenAI.bind_tools() 使用（顺序影响部分模型偏好，常用放前）
-lc_tools = [rag_search, search, calculator]
+# 供 ChatOpenAI.bind_tools() 使用（顺序影响部分模型偏好；calculator 靠前便于数值类提问）
+lc_tools = [rag_search, calculator, search]
