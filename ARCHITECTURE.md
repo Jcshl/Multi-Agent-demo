@@ -25,7 +25,7 @@ flowchart TB
     end
 
     subgraph L4["第 4 层：工具与外部资源"]
-        T1["tools.py<br/>rag_search / search / calculator"]
+        T1["tools.py<br/>rag_search / calculator / search"]
         T2["account_tools.py + database.py<br/>MySQL 只读查询"]
         RAG["rag.py<br/>FAISS + 本地文档向量库"]
     end
@@ -150,7 +150,7 @@ flowchart LR
 flowchart LR
     subgraph ChatBot["ChatBot（攻略）"]
         CB1[LangChain ChatOpenAI<br/>SiliconFlow]
-        CB2[bind_tools: rag_search, search, calculator]
+        CB2[bind_tools: rag_search, calculator, search]
         CB3[多轮消息 + tool 循环<br/>上限 AGENT_MAX_ITERATIONS]
     end
 

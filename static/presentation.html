@@ -304,38 +304,57 @@
     <section class="slide" id="slide-arch" data-title="架构">
       <div class="slide-inner">
         <h2><span class="num">02</span>分层架构</h2>
-        <p class="line">三种入口（CLI / Streamlit / FastAPI）共用同一 <code style="color: var(--accent);">MultiAgentOrchestrator.chat()</code>；编排器维护跨路由短期链、可选指代消解与轮次注入，关会话后摘要入 SQLite；Web 端另用 <strong style="color: var(--text)">localStorage</strong> 缓存完整聊天以便刷新回看。</p>
+        <p class="line">
+          三种入口（CLI / Streamlit / FastAPI）共用同一 <code style="color: var(--accent);">MultiAgentOrchestrator.chat()</code>。
+          编排层负责意图路由（LLM JSON + 启发式纠偏）、<strong style="color: var(--text)">composite</strong> 拆问与合并、会话链 <code style="color: var(--accent);">_stm_chain</code>、可选指代消解与全局轮次注入。
+          返回给用户时：<strong style="color: var(--text)">单一意图</strong>为对应专家的一段 reply；<strong style="color: var(--text)">composite</strong> 会先有攻略与账号<strong style="color: var(--text)">两段子回复</strong>，再经合并 LLM 合成一段正文。
+          结束会话或「新对话」时，提纲摘要<strong style="color: var(--text)">写入 SQLite 长期保存</strong>，新会话初始化时可<strong style="color: var(--text)">召回注入</strong>各 Agent。
+          Web 端 <code style="color: var(--accent);">static/index.html</code> 用 <strong style="color: var(--text)">localStorage</strong> 持久化多会话聊天记录。
+        </p>
         <div class="diagram-wrap">
           <pre class="mermaid">
 flowchart TB
-  subgraph L1["应用入口"]
-    CLI["main.py CLI"]
-    ST["Streamlit"]
-    API["FastAPI"]
+  subgraph L1["第 1 层 · 应用入口"]
+    CLI["main.py<br/>CLI REPL"]
+    ST["streamlit_app.py"]
+    API["api_app.py<br/>FastAPI + static"]
   end
-  subgraph L2["编排层"]
-    ORCH["MultiAgentOrchestrator"]
+  subgraph L2["第 2 层 · 编排"]
+    ORCH["MultiAgentOrchestrator<br/>orchestrator.py"]
   end
-  subgraph L3["专家 Agent"]
-    G["ChatBot 攻略"]
-    A["AccountAgent"]
-    C["CasualAgent"]
+  subgraph L3["第 3 层 · 专家 Agent"]
+    G["ChatBot<br/>chatbot.py"]
+    A["AccountAgent<br/>account_agent.py"]
+    C["CasualAgent<br/>casual_agent.py"]
   end
-  subgraph L4["工具与数据"]
-    RAG["RAG FAISS"]
-    SQL["MySQL 只读"]
+  subgraph L4["第 4 层 · 工具与数据"]
+    T1["tools.py<br/>rag_search · calculator · search"]
+    RAG["rag.py<br/>FAISS 向量库"]
+    T2["account_tools.py<br/>database.py"]
+    SQL[("MySQL 只读")]
   end
-  subgraph MEM["记忆与展示"]
-    SQLITE["SQLite 提纲"]
-    LS["localStorage 聊天"]
+  subgraph OUT["用户可见输出"]
+    O1["单一意图<br/>一段专家 reply"]
+    O2["composite<br/>game_reply + account_reply<br/>→ 合并 LLM → 一段正文"]
   end
-  L1 --> ORCH
+  subgraph MEM["记忆 · 持久化"]
+    MS[("SQLite<br/>memory_store.py<br/>提纲摘要落库 · 可召回")]
+    LS["localStorage<br/>多会话消息列表"]
+  end
+  CLI --> ORCH
+  ST --> ORCH
+  API --> ORCH
   ORCH --> G
   ORCH --> A
   ORCH --> C
-  G --> RAG
-  A --> SQL
-  ORCH --> SQLITE
+  G --> T1
+  T1 --> RAG
+  A --> T2
+  T2 --> SQL
+  ORCH --> O1
+  ORCH --> O2
+  ORCH -->|结束会话 / 新对话 写入| MS
+  MS -.->|初始化 / clear 后 注入| ORCH
   API --> LS
           </pre>
         </div>
@@ -346,17 +365,18 @@ flowchart TB
       <div class="slide-inner">
         <h2><span class="num">03</span>意图路由</h2>
         <p class="line">
-          默认由 LLM 输出结构化意图（<code style="color: var(--accent);">game</code> / <code style="color: var(--accent);">account</code> / <code style="color: var(--accent);">casual</code> / <code style="color: var(--accent);">composite</code>）。
-          辅以关键词与 UID 启发式纠偏；可通过环境变量切换纯启发式或固定单一路由模式，便于调试与对比实验。
+          默认由 LLM 输出 JSON 意图（<code style="color: var(--accent);">game</code> / <code style="color: var(--accent);">account</code> / <code style="color: var(--accent);">casual</code> / <code style="color: var(--accent);">composite</code>），失败则回退启发式。
+          编排器对常见误判做纠偏（例如<strong style="color: var(--text)">纯算术</strong>统一走 <code style="color: var(--accent);">game</code> 以使用 <code style="color: var(--accent);">calculator</code>；「攻略 + 上文 UID」抬升为 <code style="color: var(--accent);">composite</code>）。
+          环境变量 <code style="color: var(--accent);">MULTI_AGENT_ROUTE_MODE</code> 可切换 <code style="color: var(--accent);">llm</code> / <code style="color: var(--accent);">heuristic</code> / 固定单一路由便于调试。
         </p>
         <div class="mini-flow">
           <div class="mini-card">
             <h3>单一意图</h3>
-            <p>命中后直接调用对应专家，保持各 Agent 独立多轮上下文。</p>
+            <p>命中后调用对应专家；各 Agent 自带多轮上下文，并可注入 SQLite 提纲摘要。</p>
           </div>
           <div class="mini-card">
             <h3>composite</h3>
-            <p>拆成攻略子问与账号子问，两路执行后再由编排器合成一段自然语言回复。</p>
+            <p>LLM 拆成 <code style="color: var(--accent);">game_query</code> / <code style="color: var(--accent);">account_query</code>，攻略与账号并行，再由合并 LLM 输出一段回复。</p>
           </div>
         </div>
       </div>
@@ -371,18 +391,22 @@ flowchart TB
 sequenceDiagram
   participant U as 用户
   participant O as Orchestrator
-  participant G as 攻略 Agent
-  participant A as 账号 Agent
-  U->>O: 一句话含攻略 + UID
-  O->>O: 拆分子问题
+  participant D as 拆分 LLM
+  participant G as ChatBot
+  participant A as AccountAgent
+  participant S as 合并 LLM
+  U->>O: 一句话含攻略 + 账号
+  O->>D: 拆分子问题
+  D-->>O: game_query · account_query
   par 并行
-    O->>G: game_query
-    O->>A: account_query
+    O->>G: chat(game_query)
+    O->>A: chat(account_query)
   end
   G-->>O: game_reply
   A-->>O: account_reply
-  O->>O: LLM 合成
-  O-->>U: 最终回复
+  O->>S: 合并回答
+  S-->>O: 合成正文
+  O-->>U: reply · composite
           </pre>
         </div>
       </div>
